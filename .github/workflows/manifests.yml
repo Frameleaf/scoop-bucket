@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   install:
     runs-on: windows-latest
@@ -16,9 +19,8 @@ jobs:
           Invoke-RestMethod -Uri https://get.scoop.sh -OutFile install.ps1
           .\install.ps1 -RunAsAdmin
           $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
-          scoop bucket add frameleaf "$env:GITHUB_WORKSPACE"
           foreach ($manifest in Get-ChildItem bucket\*.json) {
-            $app = "frameleaf/$($manifest.BaseName)"
+            $app = $manifest.FullName
             & "$env:USERPROFILE\scoop\apps\scoop\current\bin\checkver.ps1" -App $manifest.BaseName -Dir bucket
             scoop install $app
             if ($LASTEXITCODE) { throw "scoop install $app failed" }
