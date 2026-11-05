@@ -1,0 +1,36 @@
+{
+    "version": "0.1.1",
+    "description": "Desktop app for Frameleaf, a self-hosted photo and video library. Run a library on this PC or connect to your server.",
+    "homepage": "https://frameleaf.app/download/",
+    "license": "AGPL-3.0-only",
+    "notes": [
+        "Settings are stored in '%APPDATA%\\app.frameleaf.desktop' and are not persisted by Scoop.",
+        "Frameleaf is in beta. The Windows build is not code-signed yet."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Frameleaf/frameleaf-desktop/releases/download/v0.1.1/Frameleaf_0.1.1_x64-setup-unsigned.exe#/dl.7z",
+            "hash": "c61c8f4d3ff9c0b122a3df82886f43a203f8acd34cb607d62abfe292c4ed8dba"
+        }
+    },
+    "post_install": "Remove-Item \"$dir\\`$PLUGINSDIR\", \"$dir\\uninstall.exe\" -Force -Recurse -ErrorAction Ignore",
+    "shortcuts": [
+        [
+            "frameleaf-desktop.exe",
+            "Frameleaf"
+        ]
+    ],
+    "checkver": {
+        "github": "https://github.com/Frameleaf/frameleaf-desktop"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Frameleaf/frameleaf-desktop/releases/download/v$version/Frameleaf_$version_x64-setup-unsigned.exe#/dl.7z"
+            }
+        },
+        "hash": {
+            "url": "https://github.com/Frameleaf/frameleaf-desktop/releases/download/v$version/SHA256SUMS"
+        }
+    }
+}
