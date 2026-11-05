@@ -1,0 +1,27 @@
+name: Manifests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  install:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install, check and uninstall every manifest
+        shell: pwsh
+        run: |
+          Invoke-RestMethod -Uri https://get.scoop.sh -OutFile install.ps1
+          .\install.ps1 -RunAsAdmin
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+          scoop bucket add frameleaf "$env:GITHUB_WORKSPACE"
+          foreach ($manifest in Get-ChildItem bucket\*.json) {
+            $app = "frameleaf/$($manifest.BaseName)"
+            & "$env:USERPROFILE\scoop\apps\scoop\current\bin\checkver.ps1" -App $manifest.BaseName -Dir bucket
+            scoop install $app
+            if ($LASTEXITCODE) { throw "scoop install $app failed" }
+            scoop uninstall $manifest.BaseName
+            if ($LASTEXITCODE) { throw "scoop uninstall $app failed" }
+          }
