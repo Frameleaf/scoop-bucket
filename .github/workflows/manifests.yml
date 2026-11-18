@@ -12,13 +12,53 @@ permissions:
   contents: read
 
 jobs:
+  # Runs on Forgejo (Linux); the GitHub copy of CI is billing-locked.
+  validate:
+    if: github.server_url != 'https://github.com'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Manifests are valid JSON with the required fields
+        run: |
+          for f in bucket/*.json; do
+            jq -e '.version and .homepage and .license and (.architecture."64bit".url) and (.architecture."64bit".hash | test("^[0-9a-f]{64}$"))' "$f" >/dev/null || { echo "bad manifest $f"; exit 1; }
+          done
+
+  # Follows the latest Frameleaf Desktop release. Edits the manifest on Linux, pushes to the public
+  # GitHub bucket with GH_PUBLISH_TOKEN (and back to Forgejo).
+  update:
+    if: github.server_url != 'https://github.com' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update frameleaf.json to the latest release
+        env:
+          GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api repos/Frameleaf/frameleaf-desktop/releases/latest -q .tag_name)
+          ver=${tag#v}
+          [ "$ver" != "$(jq -r .version bucket/frameleaf.json)" ] || { echo "already at $ver"; exit 0; }
+          base=https://github.com/Frameleaf/frameleaf-desktop/releases/download/$tag
+          exe=Frameleaf_${ver}_x64-setup-unsigned.exe
+          hash=$(curl -fsSL "$base/SHA256SUMS" | awk -v f="$exe" '$2==f{print $1}')
+          [ -n "$hash" ] || { echo "no hash for $exe"; exit 1; }
+          jq --arg v "$ver" --arg u "$base/$exe#/dl.7z" --arg h "$hash" \
+            '.version=$v | .architecture."64bit".url=$u | .architecture."64bit".hash=$h' \
+            bucket/frameleaf.json > /tmp/m.json
+          # ponytail: jq rewrites with 2-space indent; keep the file's 4-space style
+          jq --indent 4 . /tmp/m.json > bucket/frameleaf.json
+          git config user.name 'AJ Taylor'
+          git config user.email 'aj@ajtaylor.ca'
+          git commit -am "Update frameleaf to $ver"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/Frameleaf/scoop-bucket.git" HEAD:refs/heads/main
+          git push origin HEAD:refs/heads/main
+
+  # Windows only: no Windows runner on Forgejo, so this stays a GitHub-hosted check.
   install:
+    if: github.server_url == 'https://github.com'
     runs-on: windows-latest
-    permissions:
-      contents: write
-    env:
-      # ponytail: on schedule/dispatch, checkver -Update follows the latest Frameleaf Desktop release.
-      FOLLOW_LATEST: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install, check and uninstall every manifest
@@ -29,18 +69,8 @@ jobs:
           $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
           foreach ($manifest in Get-ChildItem bucket\*.json) {
             $app = $manifest.FullName
-            & "$env:USERPROFILE\scoop\apps\scoop\current\bin\checkver.ps1" -App $manifest.BaseName -Dir bucket -Update:($env:FOLLOW_LATEST -eq 'true')
             scoop install $app
             if ($LASTEXITCODE) { throw "scoop install $app failed" }
             scoop uninstall $manifest.BaseName
             if ($LASTEXITCODE) { throw "scoop uninstall $app failed" }
           }
-      - name: Commit the update
-        if: env.FOLLOW_LATEST == 'true'
-        shell: bash
-        run: |
-          git diff --quiet && exit 0
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -am "Update frameleaf to $(jq -r .version bucket/frameleaf.json)"
-          git push origin HEAD:refs/heads/main
